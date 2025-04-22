@@ -160,11 +160,56 @@ def get_source_code(library_name):
                 "message": "Invalid element type or missing parent class for method."
             }), 400
         
-        # Get the source code
+        # Get detailed information about the object
+        module_info = ""
+        file_path = ""
+        
         try:
-            source_code = inspect.getsource(target_obj)
+            # Try to get the module's file path
+            if hasattr(module, '__file__'):
+                file_path = module.__file__
+                module_info += f"Module file path: {file_path}\n\n"
+        except Exception:
+            pass
+            
+        # More detailed object information
+        module_info += f"Object type: {type(target_obj).__name__}\n"
+        
+        if inspect.isbuiltin(target_obj):
+            module_info += "This is a built-in function or method written in C.\n"
+        
+        # For classes, check if they're extension types
+        if inspect.isclass(target_obj):
+            if not hasattr(target_obj, '__module__') or target_obj.__module__ == 'builtins':
+                module_info += "This is a built-in class written in C.\n"
+            else:
+                module_info += f"Class defined in module: {target_obj.__module__}\n"
+                
+        # Try to get the source code
+        try:
+            # Check if object has source code available
+            if hasattr(target_obj, '__code__') or not inspect.isbuiltin(target_obj):
+                source_code = inspect.getsource(target_obj)
+            else:
+                raise TypeError("No source code available")
+                
         except (TypeError, OSError):
-            source_code = "Source code not available (possibly built-in or binary extension)"
+            # Provide more detailed error message with object information
+            source_code = f"Source code not available (possibly built-in or binary extension)\n\n{module_info}"
+            
+            # Try to get docstring for additional context
+            if inspect.getdoc(target_obj):
+                source_code += f"\nDocumentation:\n{inspect.getdoc(target_obj)}"
+                
+            # For numpy arrays and similar objects, try to get representation
+            if hasattr(target_obj, '__repr__'):
+                try:
+                    repr_str = repr(target_obj)
+                    # Only add if it's reasonably sized
+                    if len(repr_str) < 1000:
+                        source_code += f"\n\nObject representation:\n{repr_str}"
+                except:
+                    pass
         
         return jsonify({
             "status": "success",
