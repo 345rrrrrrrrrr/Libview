@@ -11,22 +11,38 @@ api_bp = Blueprint('api', __name__)
 def get_library_info(library_name):
     """Get information about a Python library."""
     try:
+        # Normalize library name - convert to lowercase for case-insensitive matching
+        # This helps with packages like 'Flask' that should be imported as 'flask'
+        normalized_name = library_name.lower()
+        
         # Try to import the module
-        module = importlib.import_module(library_name)
+        try:
+            module = importlib.import_module(normalized_name)
+        except ImportError:
+            # If lowercase fails, try the original name (some packages are case-sensitive)
+            module = importlib.import_module(library_name)
         
         # Get metadata
         try:
             metadata = {
                 "name": library_name,
-                "version": importlib.metadata.version(library_name),
-                "summary": importlib.metadata.metadata(library_name).get('Summary', 'No description available')
+                "version": importlib.metadata.version(normalized_name),
+                "summary": importlib.metadata.metadata(normalized_name).get('Summary', 'No description available')
             }
         except:
-            metadata = {
-                "name": library_name,
-                "version": "Unknown",
-                "summary": "No description available"
-            }
+            try:
+                # Try with original case if lowercase failed
+                metadata = {
+                    "name": library_name,
+                    "version": importlib.metadata.version(library_name),
+                    "summary": importlib.metadata.metadata(library_name).get('Summary', 'No description available')
+                }
+            except:
+                metadata = {
+                    "name": library_name,
+                    "version": "Unknown",
+                    "summary": "No description available"
+                }
         
         # Get classes, functions and constants
         classes = []
@@ -144,7 +160,15 @@ def get_source_code(library_name):
         }), 400
     
     try:
-        module = importlib.import_module(library_name)
+        # Normalize library name - convert to lowercase for case-insensitive matching
+        normalized_name = library_name.lower()
+        
+        # Try to import the module with normalized name first
+        try:
+            module = importlib.import_module(normalized_name)
+        except ImportError:
+            # If lowercase fails, try the original name (some packages are case-sensitive)
+            module = importlib.import_module(library_name)
         
         # Get the target object
         if element_type == 'class':
