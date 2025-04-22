@@ -146,6 +146,16 @@ export interface CodeExamplesResponse {
   examples: CodeExample[];
 }
 
+export interface LibraryAssistantResponse {
+  query: string;
+  message: string;
+  libraries: {
+    name: string;
+    version?: string;
+    summary: string;
+  }[];
+}
+
 export const searchLibraries = async (query: string): Promise<SearchResponse> => {
   try {
     console.log(`Sending request to: ${API_URL}/search with query: ${query}`);
@@ -253,4 +263,14 @@ export const getLibraryExamples = async (libraryName: string): Promise<CodeExamp
     console.error(`Error getting examples for library ${libraryName}:`, error);
     throw error;
   }
+};
+
+/**
+ * Search for libraries based on a natural language description using the AI assistant
+ * @param query A natural language query about Python libraries
+ * @returns Promise<LibraryAssistantResponse> Contains the original query, an AI message, and suggested libraries
+ */
+export const searchLibrariesByDescription = async (query: string): Promise<LibraryAssistantResponse> => {
+  const response = await axiosInstance.post(`${API_URL}/assistant/query`, { query });
+  return response.data;
 };

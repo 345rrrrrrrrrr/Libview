@@ -18,6 +18,9 @@ import html
 from urllib.parse import quote_plus
 import markdown
 
+# Import the AI assistant module
+from app.assistant import answer_library_question
+
 api_bp = Blueprint('api', __name__)
 
 # PyPI API endpoints
@@ -915,3 +918,86 @@ def extract_relevant_code(file_content, library_name):
         combined = combined[:2000] + "\n# ... (truncated) ..."
     
     return combined
+
+@api_bp.route('/assistant/query', methods=['POST'])
+def assistant_query():
+    """Process a natural language query about Python libraries."""
+    data = request.get_json()
+    if not data or 'query' not in data:
+        return jsonify({
+            "status": "error",
+            "message": "Missing query in request"
+        }), 400
+    
+    query = data['query']
+    
+    if not query.strip():
+        return jsonify({
+            "status": "error",
+            "message": "Empty query"
+        }), 400
+    
+    try:
+        result = answer_library_question(query)
+        
+        return jsonify({
+            "status": "success",
+            "response": result["response"],
+            "libraries": result["libraries"]
+        })
+        
+    except Exception as e:
+        return jsonify({
+            "status": "error",
+            "message": f"Error processing query: {str(e)}"
+        }), 500
+
+from flask import Blueprint, jsonify, request
+from .assistant import answer_library_question
+
+# Create a Blueprint for API routes
+api = Blueprint('api', __name__)
+
+@api.route('/search', methods=['GET'])
+def search_packages():
+    """Search for packages on PyPI."""
+    query = request.args.get('query', '')
+    # Implement PyPI search logic here
+    # For now, return a placeholder response
+    return jsonify({
+        'packages': [
+            {'name': 'numpy', 'version': '1.22.3', 'summary': 'Numerical Python library'},
+            {'name': 'pandas', 'version': '1.4.2', 'summary': 'Data analysis library'}
+        ]
+    })
+
+@api.route('/package/<name>', methods=['GET'])
+def package_details(name):
+    """Get details about a specific package."""
+    # Implement PyPI package detail lookup logic here
+    # For now, return a placeholder response
+    return jsonify({
+        'name': name,
+        'version': '1.0.0',
+        'summary': f'Details for {name}',
+        'description': f'Extended description for {name}',
+        'home_page': f'https://pypi.org/project/{name}/',
+        'author': 'Author Name',
+        'license': 'MIT'
+    })
+
+@api.route('/assistant', methods=['POST'])
+def library_assistant():
+    """Process a natural language query about Python libraries."""
+    data = request.json
+    query = data.get('query', '')
+    
+    if not query:
+        return jsonify({
+            'error': 'No query provided'
+        }), 400
+    
+    # Use our assistant module to process the query
+    result = answer_library_question(query)
+    
+    return jsonify(result)
