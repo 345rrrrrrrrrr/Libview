@@ -1,23 +1,33 @@
 # Python Library Explorer WebApp (Libview)
 
-A web application that allows users to search for any Python library, view its metadata, explore its classes, functions, and methods, and view the source code with proper syntax highlighting.
+[![Python 3.8+](https://img.shields.io/badge/Python-3.8+-blue.svg)](https://www.python.org/downloads/)
+[![React](https://img.shields.io/badge/React-18.x-blue.svg)](https://reactjs.org/)
+[![Flask](https://img.shields.io/badge/Flask-2.0.1-green.svg)](https://flask.palletsprojects.com/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-## Features
+A modern web application that empowers developers to search, explore, and understand Python libraries with ease. Libview provides intuitive access to library metadata, source code, and AI-powered assistance to streamline your development workflow.
 
-- Search for any installed Python library
-- View library metadata (version, description, etc.)
-- Explore library structure (classes, functions, methods)
-- View docstrings and source code with syntax highlighting
-- User-friendly interface with modern design
+![Libview Screenshot](https://via.placeholder.com/800x400?text=Libview+Screenshot)
 
-## Project Structure
+## ✨ Features
+
+- **Comprehensive Search:** Find any installed Python library or explore packages from PyPI
+- **Library Metadata:** View version information, dependencies, descriptions, and more
+- **Code Explorer:** Navigate library structure (classes, functions, methods) with ease
+- **Source Code Viewer:** Examine implementation details with syntax highlighting
+- **Code Examples:** Access practical usage examples for popular libraries
+- **Library Assistant:** Get AI-powered recommendations and answers to your library-related questions
+- **Modern UI:** Enjoy a clean, responsive interface with dark mode support
+
+## 🚀 Project Structure
 
 ```
 Libview/
 ├── backend/                # Flask backend
 │   ├── app/                # Application code
 │   │   ├── __init__.py     # Flask app initialization
-│   │   └── api.py          # API endpoints
+│   │   ├── api.py          # API endpoints
+│   │   └── assistant.py    # Library Assistant functionality
 │   ├── requirements.txt    # Main dependencies
 │   ├── requirements/       # Extra requirements
 │   │   └── dev.txt         # Development dependencies
@@ -25,26 +35,30 @@ Libview/
 └── frontend/               # React frontend
     ├── public/             # Static files
     └── src/                # React source code
+        ├── components/     # React components
+        ├── services/       # API integration
+        └── types/          # TypeScript type definitions
 ```
 
-## Getting Started
+## 🏁 Getting Started
 
 ### Prerequisites
 
 - Python 3.8+
 - Node.js 14+
+- npm or yarn
 - tmux (optional, for running both services simultaneously)
 
 ### Quick Start
 
-The easiest way to run the application is using the provided start script:
+The easiest way to run the application is using the provided script:
 
 ```bash
-chmod +x start.sh
-./start.sh
+chmod +x run.sh
+./run.sh
 ```
 
-This will start both the backend and frontend in a tmux session. The application will be available at:
+This will start both the backend and frontend services in the current terminal. The application will be available at:
 - Frontend: http://localhost:3000
 - Backend API: http://localhost:5000
 
@@ -55,8 +69,7 @@ This will start both the backend and frontend in a tmux session. The application
 ```bash
 cd backend
 pip install -r requirements.txt
-./start_dev.sh
-# Or alternatively: python run.py
+python run.py
 ```
 
 The backend will run at http://localhost:5000
@@ -71,21 +84,62 @@ npm start
 
 The frontend will run at http://localhost:3000
 
-## API Endpoints
+## 🔌 API Endpoints
 
-- `GET /api/search?q=<query>` - Search for libraries
-- `GET /api/library/<library_name>` - Get library information
-- `GET /api/library/<library_name>/source?type=<type>&name=<name>&parent=<parent>` - Get source code
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/search?q=<query>` | GET | Search for libraries |
+| `/api/library/<library_name>` | GET | Get library information |
+| `/api/library/<library_name>/source?type=<type>&name=<name>&parent=<parent>` | GET | Get source code |
+| `/api/library/<library_name>/examples` | GET | Get code examples |
+| `/api/assistant?query=<query>` | GET | Get AI-powered library recommendations |
+| `/api/pypi/search?q=<query>&page=<page>&per_page=<per_page>` | GET | Search PyPI packages |
+| `/api/pypi/package/<package_name>` | GET | Get PyPI package details |
 
-## Usage
+## 📖 Usage
 
-1. Enter a Python library name in the search bar (e.g., "requests", "numpy", "flask")
-2. Select a library from the search results
-3. Browse the library's classes, functions, and constants
-4. Click "View Code" to see the source code of any component with syntax highlighting
+1. **Search for Libraries**:
+   - Enter a Python library name in the search bar (e.g., "requests", "numpy", "flask")
+   - Or browse PyPI packages to discover new libraries
 
-## Technologies Used
+2. **Explore Library Details**:
+   - View library metadata, version information, and documentation links
+   - Browse the library's classes, functions, and constants
+   - Click on any component to see its documentation
 
-- **Backend**: Flask, Python's inspect module
-- **Frontend**: React, TypeScript, TailwindCSS, Monaco Editor
-- **Development**: tmux for running multiple services
+3. **View Source Code**:
+   - Click "View Code" next to any component to see the implementation
+   - Use the syntax-highlighted code viewer to understand the implementation
+
+4. **Get AI Assistance**:
+   - Use the Library Assistant with natural language queries like:
+     - "What's the best library for data visualization?"
+     - "I need a package for web scraping"
+     - "Help me find a good HTTP client"
+
+## 🛠️ Technologies Used
+
+- **Backend**:
+  - Flask: Web framework
+  - Python's inspect module: Library introspection
+  - AI-powered library recommendation system
+
+- **Frontend**:
+  - React: UI framework
+  - TypeScript: Type-safe JavaScript
+  - TailwindCSS: Styling
+  - Monaco Editor: Code viewer with syntax highlighting
+
+## 🤝 Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
+
+1. Fork the repository
+2. Create your feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add some amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
+
+## 📄 License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
