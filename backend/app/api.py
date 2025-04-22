@@ -4,8 +4,39 @@ import inspect
 import pkgutil
 import sys
 import importlib.metadata
+import re
 
 api_bp = Blueprint('api', __name__)
+
+def format_docstring(docstring):
+    """
+    Clean up and format docstrings, especially those using reStructuredText markup.
+    """
+    if not docstring:
+        return "No documentation available"
+    
+    # Replace common reStructuredText directives and inline markup
+    formatted = docstring
+    
+    # Replace code blocks with better formatting
+    formatted = re.sub(r'.. code-block:: (\w+)\s*\n\n', r'\nCode example:\n\n', formatted)
+    
+    # Replace class, func, and other references
+    formatted = re.sub(r':class:`~?([^`]+)`', r'\1', formatted)
+    formatted = re.sub(r':func:`~?([^`]+)`', r'\1', formatted)
+    formatted = re.sub(r':mimetype:`([^`]+)`', r'\1', formatted)
+    formatted = re.sub(r':data:`([^`]+)`', r'\1', formatted)
+    formatted = re.sub(r':ref:`([^`]+)`', r'\1', formatted)
+    
+    # Make version notes more readable
+    formatted = re.sub(r'.. versionchanged:: (\S+)\s+', r'\n[Changed in version \1]: ', formatted)
+    formatted = re.sub(r'.. versionadded:: (\S+)\s+', r'\n[Added in version \1]: ', formatted)
+    formatted = re.sub(r'.. deprecated:: (\S+)\s+', r'\n[Deprecated in version \1]: ', formatted)
+    
+    # Clean up extra whitespace and newlines
+    formatted = re.sub(r'\n{3,}', '\n\n', formatted)
+    
+    return formatted.strip()
 
 @api_bp.route('/library/<string:library_name>', methods=['GET'])
 def get_library_info(library_name):
@@ -54,14 +85,15 @@ def get_library_info(library_name):
             if name.startswith('_'):
                 continue
                 
-            # Get docstring
+            # Get docstring and format it
             docstring = inspect.getdoc(obj) or "No documentation available"
+            formatted_docstring = format_docstring(docstring)
             
             # Check if it's a class
             if inspect.isclass(obj):
                 class_info = {
                     "name": name,
-                    "docstring": docstring,
+                    "docstring": formatted_docstring,
                     "methods": []
                 }
                 
@@ -69,9 +101,10 @@ def get_library_info(library_name):
                 for method_name, method_obj in inspect.getmembers(obj, inspect.isfunction):
                     if not method_name.startswith('_'):
                         method_docstring = inspect.getdoc(method_obj) or "No documentation available"
+                        method_formatted_docstring = format_docstring(method_docstring)
                         class_info["methods"].append({
                             "name": method_name,
-                            "docstring": method_docstring
+                            "docstring": method_formatted_docstring
                         })
                         
                 classes.append(class_info)
@@ -80,7 +113,7 @@ def get_library_info(library_name):
             elif inspect.isfunction(obj):
                 func_info = {
                     "name": name,
-                    "docstring": docstring
+                    "docstring": formatted_docstring
                 }
                 functions.append(func_info)
                 
@@ -223,7 +256,9 @@ def get_source_code(library_name):
             
             # Try to get docstring for additional context
             if inspect.getdoc(target_obj):
-                source_code += f"\nDocumentation:\n{inspect.getdoc(target_obj)}"
+                # Format the docstring to clean up reStructuredText markup
+                formatted_docstring = format_docstring(inspect.getdoc(target_obj))
+                source_code += f"\nDocumentation:\n{formatted_docstring}"
                 
             # For numpy arrays and similar objects, try to get representation
             if hasattr(target_obj, '__repr__'):
