@@ -74,6 +74,50 @@ export interface SourceCodeResponse {
   source_code: string;
 }
 
+export interface PyPIPackageInfo {
+  name: string;
+  version: string;
+  summary: string;
+  installed: boolean;
+  pypi_url: string;
+}
+
+export interface PyPISearchResponse {
+  status: string;
+  packages: PyPIPackageInfo[];
+  total: number;
+  page: number;
+  pages: number;
+}
+
+export interface PyPIReleaseInfo {
+  version: string;
+  upload_date: string;
+}
+
+export interface PyPIDetailedPackageInfo {
+  name: string;
+  version: string;
+  summary: string;
+  description: string;
+  author: string;
+  author_email: string;
+  home_page: string;
+  project_url: string;
+  package_url: string;
+  requires_python: string;
+  license: string;
+  keywords: string;
+  installed: boolean;
+  install_command: string;
+}
+
+export interface PyPIPackageDetailResponse {
+  status: string;
+  info: PyPIDetailedPackageInfo;
+  releases: PyPIReleaseInfo[];
+}
+
 export const searchLibraries = async (query: string): Promise<SearchResponse> => {
   try {
     console.log(`Sending request to: ${API_URL}/search with query: ${query}`);
@@ -119,6 +163,54 @@ export const getSourceCode = async (
     return response.data;
   } catch (error) {
     console.error(`Error getting source code for ${elementType} ${elementName}:`, error);
+    throw error;
+  }
+};
+
+export const searchPyPI = async (
+  query: string, 
+  page: number = 1, 
+  perPage: number = 20
+): Promise<PyPISearchResponse> => {
+  try {
+    console.log(`Searching PyPI for: ${query} (page ${page})`);
+    const response = await axiosInstance.get(`${API_URL}/pypi/search`, {
+      params: { 
+        q: query,
+        page,
+        per_page: perPage
+      }
+    });
+    return response.data;
+  } catch (error) {
+    console.error('Error searching PyPI:', error);
+    throw error;
+  }
+};
+
+export const getPackageInfoFromPyPI = async (packageName: string): Promise<PyPIPackageDetailResponse> => {
+  try {
+    const response = await axiosInstance.get(`${API_URL}/pypi/package/${packageName}`);
+    return response.data;
+  } catch (error) {
+    console.error(`Error getting PyPI info for package ${packageName}:`, error);
+    throw error;
+  }
+};
+
+export const installPackage = async (packageName: string): Promise<{success: boolean; message: string}> => {
+  try {
+    // For now, we'll just return instructions
+    return {
+      success: true,
+      message: `To install ${packageName}, run: pip install ${packageName}`
+    };
+    
+    // In the future, we could implement actual installation via an API endpoint:
+    // const response = await axiosInstance.post(`${API_URL}/install-package`, { packageName });
+    // return response.data;
+  } catch (error) {
+    console.error(`Error installing package ${packageName}:`, error);
     throw error;
   }
 };
