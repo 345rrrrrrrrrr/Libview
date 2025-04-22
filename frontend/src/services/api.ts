@@ -80,6 +80,8 @@ export interface PyPIPackageInfo {
   summary: string;
   installed: boolean;
   pypi_url: string;
+  relevance?: number;
+  download_count?: number;
 }
 
 export interface PyPISearchResponse {
@@ -88,6 +90,10 @@ export interface PyPISearchResponse {
   total: number;
   page: number;
   pages: number;
+  filters?: {
+    sort_by: string;
+    exact_match: boolean;
+  };
 }
 
 export interface PyPIReleaseInfo {
@@ -116,6 +122,14 @@ export interface PyPIPackageDetailResponse {
   status: string;
   info: PyPIDetailedPackageInfo;
   releases: PyPIReleaseInfo[];
+}
+
+export interface PyPISearchOptions {
+  query: string;
+  page?: number;
+  perPage?: number;
+  sortBy?: 'relevance' | 'popularity' | 'name' | 'date';
+  exactMatch?: boolean;
 }
 
 export const searchLibraries = async (query: string): Promise<SearchResponse> => {
@@ -168,17 +182,19 @@ export const getSourceCode = async (
 };
 
 export const searchPyPI = async (
-  query: string, 
-  page: number = 1, 
-  perPage: number = 20
+  options: PyPISearchOptions
 ): Promise<PyPISearchResponse> => {
   try {
-    console.log(`Searching PyPI for: ${query} (page ${page})`);
+    const { query, page = 1, perPage = 20, sortBy = 'relevance', exactMatch = false } = options;
+    
+    console.log(`Searching PyPI for: ${query} (page ${page}, sort: ${sortBy}, exact: ${exactMatch})`);
     const response = await axiosInstance.get(`${API_URL}/pypi/search`, {
       params: { 
         q: query,
         page,
-        per_page: perPage
+        per_page: perPage,
+        sort_by: sortBy,
+        exact_match: exactMatch
       }
     });
     return response.data;

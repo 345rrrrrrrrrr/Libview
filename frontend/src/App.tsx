@@ -4,11 +4,13 @@ import SearchBar from './components/SearchBar';
 import LibraryDetails from './components/LibraryDetails';
 import CodeViewer from './components/CodeViewer';
 import PyPIPackageDetails from './components/PyPIPackageDetails';
+import SearchFilters from './components/SearchFilters';
 import { 
   PackageInfo, 
   searchLibraries, 
   PyPIPackageInfo,
-  searchPyPI
+  searchPyPI,
+  PyPISearchOptions
 } from './services/api';
 
 function App() {
@@ -23,6 +25,10 @@ function App() {
   const [totalPages, setTotalPages] = useState(1);
   const [currentSearchMode, setCurrentSearchMode] = useState<'local' | 'pypi'>('local');
   const [currentQuery, setCurrentQuery] = useState('');
+  
+  // Filter state
+  const [sortBy, setSortBy] = useState<string>('relevance');
+  const [exactMatch, setExactMatch] = useState<boolean>(false);
   
   const handleSearch = async (query: string, searchType: 'local' | 'pypi') => {
     setLoading(true);
@@ -39,7 +45,15 @@ function App() {
         setSearchResults(result.packages);
         setPypiSearchResults([]);
       } else {
-        const result = await searchPyPI(query, 1, 20);
+        const searchOptions: PyPISearchOptions = {
+          query,
+          page: 1,
+          perPage: 20,
+          sortBy: sortBy as 'relevance' | 'popularity' | 'name' | 'date',
+          exactMatch
+        };
+        
+        const result = await searchPyPI(searchOptions);
         setPypiSearchResults(result.packages);
         setSearchResults([]);
         setCurrentPage(result.page);
@@ -55,13 +69,56 @@ function App() {
     }
   };
 
+  const handleFilterChange = async () => {
+    if (currentSearchMode !== 'pypi' || !currentQuery) return;
+    
+    setLoading(true);
+    try {
+      const searchOptions: PyPISearchOptions = {
+        query: currentQuery,
+        page: 1,
+        perPage: 20,
+        sortBy: sortBy as 'relevance' | 'popularity' | 'name' | 'date',
+        exactMatch
+      };
+      
+      const result = await searchPyPI(searchOptions);
+      setPypiSearchResults(result.packages);
+      setCurrentPage(result.page);
+      setTotalPages(result.pages);
+    } catch (err) {
+      console.error('Filter error:', err);
+      setError('Failed to apply filters. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSortChange = (newSortBy: string) => {
+    setSortBy(newSortBy);
+    setTimeout(() => handleFilterChange(), 0);
+  };
+  
+  const handleExactMatchChange = (newExactMatch: boolean) => {
+    setExactMatch(newExactMatch);
+    setTimeout(() => handleFilterChange(), 0);
+  };
+
   const handleLoadMorePyPI = async () => {
     if (currentPage >= totalPages) return;
     
     setLoading(true);
     try {
       const nextPage = currentPage + 1;
-      const result = await searchPyPI(currentQuery, nextPage, 20);
+      const searchOptions: PyPISearchOptions = {
+        query: currentQuery,
+        page: nextPage,
+        perPage: 20,
+        sortBy: sortBy as 'relevance' | 'popularity' | 'name' | 'date',
+        exactMatch
+      };
+      
+      const result = await searchPyPI(searchOptions);
       setPypiSearchResults(prev => [...prev, ...result.packages]);
       setCurrentPage(result.page);
     } catch (err) {
@@ -165,56 +222,72 @@ function App() {
       )}
 
       {!loading && !selectedLibrary && !selectedPyPIPackage && !sourceCode && currentSearchMode === 'pypi' && (
-        <div className="bg-white p-6 rounded shadow">
-          <h2 className="text-xl font-semibold mb-4">PyPI Packages</h2>
-          {pypiSearchResults.length > 0 ? (
-            <>
-              <ul className="space-y-2">
-                {pypiSearchResults.map((pkg, index) => (
-                  <li key={index} className="border-b pb-2">
-                    <button
-                      onClick={() => handleSelectPyPIPackage(pkg.name)}
-                      className="text-left w-full hover:bg-gray-50 p-2 rounded"
-                    >
-                      <div className="flex justify-between">
-                        <div className="font-semibold text-blue-600">{pkg.name}</div>
-                        {pkg.installed && (
-                          <span className="bg-green-100 text-green-800 text-xs font-semibold px-2.5 py-0.5 rounded">
-                            Installed
-                          </span>
-                        )}
-                      </div>
-                      <div className="text-sm text-gray-600">
-                        {pkg.version && <span className="mr-2">v{pkg.version}</span>}
-                        {pkg.summary}
-                      </div>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-              
-              {currentPage < totalPages && (
-                <div className="mt-6 text-center">
-                  <button
-                    onClick={handleLoadMorePyPI}
-                    className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
-                    disabled={loading}
-                  >
-                    {loading ? 'Loading...' : 'Load More Results'}
-                  </button>
-                </div>
-              )}
-              
-              <div className="mt-4 text-sm text-gray-500 text-center">
-                Showing {pypiSearchResults.length} packages of {totalPages * 20}+ results
-              </div>
-            </>
-          ) : (
-            <p className="text-gray-600 text-center py-10">
-              No Python packages found matching your query. Try a different search term.
-            </p>
+        <>
+          {currentQuery && (
+            <SearchFilters
+              sortBy={sortBy}
+              exactMatch={exactMatch}
+              onSortChange={handleSortChange}
+              onExactMatchChange={handleExactMatchChange}
+            />
           )}
-        </div>
+          
+          <div className="bg-white p-6 rounded shadow">
+            <h2 className="text-xl font-semibold mb-4">PyPI Packages</h2>
+            {pypiSearchResults.length > 0 ? (
+              <>
+                <ul className="space-y-2">
+                  {pypiSearchResults.map((pkg, index) => (
+                    <li key={index} className="border-b pb-2">
+                      <button
+                        onClick={() => handleSelectPyPIPackage(pkg.name)}
+                        className="text-left w-full hover:bg-gray-50 p-2 rounded"
+                      >
+                        <div className="flex justify-between">
+                          <div className="font-semibold text-blue-600">{pkg.name}</div>
+                          {pkg.installed && (
+                            <span className="bg-green-100 text-green-800 text-xs font-semibold px-2.5 py-0.5 rounded">
+                              Installed
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-sm text-gray-600">
+                          {pkg.version && <span className="mr-2">v{pkg.version}</span>}
+                          {pkg.summary}
+                        </div>
+                        {pkg.download_count !== undefined && (
+                          <div className="text-xs text-gray-500 mt-1">
+                            Downloads: {typeof pkg.download_count === 'number' ? pkg.download_count.toLocaleString() : pkg.download_count}
+                          </div>
+                        )}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+                
+                {currentPage < totalPages && (
+                  <div className="mt-6 text-center">
+                    <button
+                      onClick={handleLoadMorePyPI}
+                      className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+                      disabled={loading}
+                    >
+                      {loading ? 'Loading...' : 'Load More Results'}
+                    </button>
+                  </div>
+                )}
+                
+                <div className="mt-4 text-sm text-gray-500 text-center">
+                  Showing {pypiSearchResults.length} packages of {totalPages * 20}+ results
+                </div>
+              </>
+            ) : (
+              <p className="text-gray-600 text-center py-10">
+                No Python packages found matching your query. Try a different search term.
+              </p>
+            )}
+          </div>
+        </>
       )}
 
       {!loading && !selectedLibrary && !selectedPyPIPackage && !sourceCode && searchResults.length === 0 && pypiSearchResults.length === 0 && currentQuery !== '' && (

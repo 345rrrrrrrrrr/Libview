@@ -304,6 +304,8 @@ def search_pypi():
     query = request.args.get('q', '').lower()
     page = int(request.args.get('page', '1'))
     per_page = int(request.args.get('per_page', '20'))
+    sort_by = request.args.get('sort_by', 'relevance')  # Options: relevance, popularity, name, date
+    exact_match = request.args.get('exact_match', 'false').lower() == 'true'
     
     if not query:
         return jsonify({
@@ -317,111 +319,229 @@ def search_pypi():
         try:
             for dist in importlib.metadata.distributions():
                 installed_packages.add(dist.metadata['Name'].lower())
-        except:
-            pass
+        except Exception as e:
+            print(f"Error getting installed packages: {str(e)}")
             
-        # PyPI uses a JSON API for searching
-        search_url = f"https://pypi.org/pypi/simple"
+        results = []
+        total_results = 0
         
-        # To search PyPI efficiently, we'll use their JSON API
-        params = {
-            "q": query,
-            "page": page
-        }
-        
-        # Direct search might not work well with the simple API, so we'll try the advanced search
-        # This requires HTML parsing, but there's also a JSON endpoint we can try
+        # First approach: Using the PyPI JSON API
         try:
-            json_search_url = f"https://pypi.org/search/api/?q={query}&page={page}"
-            response = requests.get(json_search_url, timeout=5)
-            data = response.json()
-            
-            results = []
-            for item in data.get('results', []):
-                package_info = {
-                    "name": item.get('name', ''),
-                    "version": item.get('version', ''),
-                    "summary": item.get('description', 'No description available'),
-                    "installed": item.get('name', '').lower() in installed_packages,
-                    "pypi_url": f"https://pypi.org/project/{item.get('name', '')}"
-                }
-                results.append(package_info)
+            # Build the sort parameter if specified
+            sort_param = ""
+            if sort_by == "popularity":
+                sort_param = "&o=-zscore"  # Use zscore for popularity
+            elif sort_by == "name":
+                sort_param = "&o=name"
+            elif sort_by == "date":
+                sort_param = "&o=-created"
                 
-            return jsonify({
-                "status": "success", 
-                "packages": results[:per_page],
-                "total": data.get('total', 0),
-                "page": page,
-                "pages": (data.get('total', 0) + per_page - 1) // per_page
-            })
+            # Use PyPI's JSON search API
+            json_search_url = f"https://pypi.org/pypi/{query}/json"
             
-        except:
-            # Fallback to a different approach - get package details directly
-            # This is less efficient but more reliable
-            project_url = f"https://pypi.org/simple/"
-            response = requests.get(project_url, timeout=10)
-            
-            # Parse basic HTML to get package names
-            import re
-            package_names = re.findall(r'<a[^>]*>([^<]+)</a>', response.text)
-            
-            # Filter packages by query
-            matching_packages = [name for name in package_names if query in name.lower()]
-            
-            # Paginate results
-            start_idx = (page - 1) * per_page
-            end_idx = start_idx + per_page
-            paginated_packages = matching_packages[start_idx:end_idx]
-            
-            # For each package, try to get more details
-            results = []
-            with ThreadPoolExecutor(max_workers=5) as executor:
-                def get_package_details(name):
-                    try:
-                        detail_url = PYPI_PROJECT_URL.format(package_name=name)
-                        detail_response = requests.get(detail_url, timeout=3)
-                        if detail_response.status_code == 200:
-                            data = detail_response.json()
-                            info = data.get('info', {})
-                            return {
-                                "name": name,
-                                "version": info.get('version', 'Unknown'),
-                                "summary": info.get('summary', 'No description available'),
-                                "installed": name.lower() in installed_packages,
-                                "pypi_url": f"https://pypi.org/project/{name}"
-                            }
-                    except:
-                        pass
-                    
-                    # Fallback if we couldn't get details
-                    return {
-                        "name": name,
-                        "version": "Unknown",
-                        "summary": "No description available",
-                        "installed": name.lower() in installed_packages,
-                        "pypi_url": f"https://pypi.org/project/{name}"
-                    }
-                
-                # Get package details in parallel for better performance
-                package_futures = [executor.submit(get_package_details, name) for name in paginated_packages]
-                for future in package_futures:
-                    package_info = future.result()
-                    if package_info:
+            # First try direct package lookup if it might be an exact match
+            if len(query.split()) == 1:  # Only do direct lookup for single-word queries
+                try:
+                    direct_response = requests.get(json_search_url, timeout=5)
+                    if direct_response.status_code == 200:
+                        data = direct_response.json()
+                        info = data.get('info', {})
+                        
+                        # Add the exact match package
+                        package_info = {
+                            "name": info.get('name', query),
+                            "version": info.get('version', 'Unknown'),
+                            "summary": info.get('summary', 'No description available'),
+                            "installed": info.get('name', '').lower() in installed_packages,
+                            "pypi_url": f"https://pypi.org/project/{info.get('name', query)}",
+                            "relevance": 100,  # Highest relevance for exact match
+                            "download_count": 0  # We don't have this info from direct lookup
+                        }
                         results.append(package_info)
+                except Exception as e:
+                    print(f"Direct package lookup failed: {str(e)}")
             
-            return jsonify({
-                "status": "success",
-                "packages": results,
-                "total": len(matching_packages),
-                "page": page,
-                "pages": (len(matching_packages) + per_page - 1) // per_page
-            })
+            # Then do a more general search using the PyPI simple index
+            try:
+                # Parse the simple index to get a list of all packages
+                simple_index_url = "https://pypi.org/simple/"
+                simple_response = requests.get(simple_index_url, timeout=10)
+                
+                if simple_response.status_code == 200:
+                    package_names = re.findall(r'<a[^>]*>([^<]+)</a>', simple_response.text)
+                    
+                    # Filter by search query
+                    matching_packages = []
+                    for name in package_names:
+                        if query in name.lower():
+                            # Skip if exact match is enabled and this isn't an exact match
+                            if exact_match and name.lower() != query:
+                                continue
+                            matching_packages.append(name)
+                    
+                    # Calculate total after filtering
+                    total_results = len(matching_packages)
+                    
+                    # Sort matching packages
+                    if sort_by == "name":
+                        matching_packages.sort()
+                    
+                    # Paginate the results
+                    start_idx = (page - 1) * per_page
+                    end_idx = min(start_idx + per_page, len(matching_packages))
+                    paginated_packages = matching_packages[start_idx:end_idx]
+                    
+                    # Get details for each package
+                    for name in paginated_packages:
+                        # Skip if we already have this package from direct lookup
+                        if any(p.get('name', '').lower() == name.lower() for p in results):
+                            continue
+                            
+                        try:
+                            # Try to get package details
+                            package_url = f"https://pypi.org/pypi/{name}/json"
+                            package_response = requests.get(package_url, timeout=3)
+                            
+                            if package_response.status_code == 200:
+                                package_data = package_response.json()
+                                info = package_data.get('info', {})
+                                
+                                # Calculate relevance score
+                                relevance = 0
+                                if query.lower() == name.lower():
+                                    relevance = 100
+                                elif query.lower() in name.lower():
+                                    position = name.lower().find(query.lower())
+                                    relevance = 90 - min(position, 80)
+                                else:
+                                    relevance = 50
+                                
+                                package_info = {
+                                    "name": info.get('name', name),
+                                    "version": info.get('version', 'Unknown'),
+                                    "summary": info.get('summary', 'No description available'),
+                                    "installed": info.get('name', '').lower() in installed_packages,
+                                    "pypi_url": f"https://pypi.org/project/{info.get('name', name)}",
+                                    "relevance": relevance,
+                                    "download_count": 0  # We don't have this info
+                                }
+                                results.append(package_info)
+                        except Exception as e:
+                            print(f"Error getting details for {name}: {str(e)}")
+                            # Still add a basic entry even if details fail
+                            results.append({
+                                "name": name,
+                                "version": "Unknown",
+                                "summary": "No description available",
+                                "installed": name.lower() in installed_packages,
+                                "pypi_url": f"https://pypi.org/project/{name}",
+                                "relevance": 50,
+                                "download_count": 0
+                            })
+            except Exception as e:
+                print(f"Error using simple index: {str(e)}")
+                
+            # If we don't have any results yet, use a more direct approach
+            if not results:
+                # Fall back to searching with requests directly
+                search_page_url = f"https://pypi.org/search/?q={query}&page={page}"
+                response = requests.get(search_page_url, timeout=10)
+                
+                if response.status_code == 200:
+                    # Extract package names from search results HTML
+                    package_matches = re.findall(r'<span class="package-snippet__name">([^<]+)</span>', response.text)
+                    version_matches = re.findall(r'<span class="package-snippet__version">([^<]+)</span>', response.text)
+                    description_matches = re.findall(r'<p class="package-snippet__description">([^<]+)</p>', response.text)
+                    
+                    for i in range(min(len(package_matches), per_page)):
+                        name = package_matches[i] if i < len(package_matches) else "Unknown"
+                        version = version_matches[i] if i < len(version_matches) else "Unknown"
+                        description = description_matches[i] if i < len(description_matches) else "No description available"
+                        
+                        # Skip if exact match is enabled and this isn't an exact match
+                        if exact_match and name.lower() != query:
+                            continue
+                            
+                        # Calculate relevance score
+                        relevance = 0
+                        if query.lower() == name.lower():
+                            relevance = 100
+                        elif query.lower() in name.lower():
+                            position = name.lower().find(query.lower())
+                            relevance = 90 - min(position, 80)
+                        else:
+                            relevance = 50
+                            
+                        package_info = {
+                            "name": name,
+                            "version": version,
+                            "summary": description,
+                            "installed": name.lower() in installed_packages,
+                            "pypi_url": f"https://pypi.org/project/{name}",
+                            "relevance": relevance,
+                            "download_count": 0
+                        }
+                        
+                        # Only add if we don't already have this package
+                        if not any(p.get('name', '').lower() == name.lower() for p in results):
+                            results.append(package_info)
+        except Exception as e:
+            print(f"Error using all PyPI search methods: {str(e)}")
             
+        # Sort results based on the selected criteria
+        if not results:
+            # If all methods failed, create a dummy result to tell the user
+            results = [{
+                "name": f"Search for '{query}' failed",
+                "version": "N/A",
+                "summary": "There was an error accessing PyPI. Please try again or try a different search term.",
+                "installed": False,
+                "pypi_url": "https://pypi.org",
+                "relevance": 0,
+                "download_count": 0
+            }]
+        else:
+            # Sort by the requested criteria
+            if sort_by == "relevance":
+                results.sort(key=lambda x: x["relevance"], reverse=True)
+            elif sort_by == "popularity":
+                results.sort(key=lambda x: x["download_count"], reverse=True)
+            elif sort_by == "name":
+                results.sort(key=lambda x: x["name"].lower())
+                
+        # Calculate total pages
+        if total_results == 0:
+            total_results = len(results)
+            
+        total_pages = (total_results + per_page - 1) // per_page
+        
+        return jsonify({
+            "status": "success", 
+            "packages": results,
+            "total": total_results,
+            "page": page,
+            "pages": max(1, total_pages),
+            "filters": {
+                "sort_by": sort_by,
+                "exact_match": exact_match
+            }
+        })
+        
     except Exception as e:
+        print(f"Unexpected error in search_pypi: {str(e)}")
+        # Return a proper error response to prevent 500 error
         return jsonify({
             "status": "error",
-            "message": f"Error searching PyPI: {str(e)}"
-        }), 500
+            "message": f"Error searching PyPI: {str(e)}",
+            "packages": [],
+            "total": 0,
+            "page": 1,
+            "pages": 1,
+            "filters": {
+                "sort_by": sort_by,
+                "exact_match": exact_match
+            }
+        })
 
 @api_bp.route('/pypi/package/<string:package_name>', methods=['GET'])
 def get_pypi_package_info(package_name):
