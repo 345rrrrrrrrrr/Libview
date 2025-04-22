@@ -1,0 +1,10 @@
+{
+  "projectId": "libview",
+  "orgId": "your-org-id",
+  "settings": {
+    "framework": null,
+    "buildCommand": null,
+    "devCommand": null,
+    "outputDirectory": null
+  }
+}
