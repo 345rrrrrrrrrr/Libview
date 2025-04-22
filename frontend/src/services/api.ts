@@ -1,7 +1,26 @@
 import axios from 'axios';
 
-// Use a relative URL which will work in any environment
-const API_URL = '/api';
+// Configure axios with proper settings for GitHub Codespaces
+// Allow credentials (cookies) and configure CORS
+const axiosInstance = axios.create({
+  withCredentials: true,
+  headers: {
+    'Content-Type': 'application/json',
+    'Accept': 'application/json'
+  }
+});
+
+// Determine the API URL based on the environment
+let API_URL = '/api';
+
+// For GitHub Codespaces, we need to ensure proper port handling
+// By using the window.location.hostname we maintain the proper domain
+if (window.location.hostname.includes('github.dev')) {
+  // Use the same hostname but change port from 3000 to 5000
+  API_URL = window.location.protocol + '//' + 
+            window.location.hostname.replace('-3001', '-5000') + 
+            '/api';
+}
 
 export interface LibraryMetadata {
   name: string;
@@ -57,7 +76,8 @@ export interface SourceCodeResponse {
 
 export const searchLibraries = async (query: string): Promise<SearchResponse> => {
   try {
-    const response = await axios.get(`${API_URL}/search`, {
+    console.log(`Sending request to: ${API_URL}/search with query: ${query}`);
+    const response = await axiosInstance.get(`${API_URL}/search`, {
       params: { q: query }
     });
     return response.data;
@@ -69,7 +89,7 @@ export const searchLibraries = async (query: string): Promise<SearchResponse> =>
 
 export const getLibraryInfo = async (libraryName: string): Promise<LibraryInfo> => {
   try {
-    const response = await axios.get(`${API_URL}/library/${libraryName}`);
+    const response = await axiosInstance.get(`${API_URL}/library/${libraryName}`);
     return response.data;
   } catch (error) {
     console.error(`Error getting info for library ${libraryName}:`, error);
@@ -93,7 +113,7 @@ export const getSourceCode = async (
       params.parent = parentClass;
     }
 
-    const response = await axios.get(`${API_URL}/library/${libraryName}/source`, {
+    const response = await axiosInstance.get(`${API_URL}/library/${libraryName}/source`, {
       params
     });
     return response.data;
