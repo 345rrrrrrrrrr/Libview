@@ -22,6 +22,9 @@ if (window.location.hostname.includes('github.dev')) {
             '/api';
 }
 
+// For local development, use the proxy set up in package.json
+// For Vercel deployment, the API_URL will remain as /api since our routes in vercel.json will handle it
+
 export interface LibraryMetadata {
   name: string;
   version: string;
