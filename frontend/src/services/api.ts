@@ -132,6 +132,20 @@ export interface PyPISearchOptions {
   exactMatch?: boolean;
 }
 
+export interface CodeExample {
+  title: string;
+  code: string;
+  language: string;
+  source: string;
+  url: string;
+}
+
+export interface CodeExamplesResponse {
+  status: string;
+  library_name: string;
+  examples: CodeExample[];
+}
+
 export const searchLibraries = async (query: string): Promise<SearchResponse> => {
   try {
     console.log(`Sending request to: ${API_URL}/search with query: ${query}`);
@@ -227,6 +241,16 @@ export const installPackage = async (packageName: string): Promise<{success: boo
     // return response.data;
   } catch (error) {
     console.error(`Error installing package ${packageName}:`, error);
+    throw error;
+  }
+};
+
+export const getLibraryExamples = async (libraryName: string): Promise<CodeExamplesResponse> => {
+  try {
+    const response = await axiosInstance.get(`${API_URL}/library/${libraryName}/examples`);
+    return response.data;
+  } catch (error) {
+    console.error(`Error getting examples for library ${libraryName}:`, error);
     throw error;
   }
 };

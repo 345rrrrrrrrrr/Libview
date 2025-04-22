@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { LibraryInfo, getLibraryInfo, getSourceCode } from '../services/api';
+import { LibraryInfo, getLibraryInfo, getSourceCode, getLibraryExamples, CodeExample } from '../services/api';
 import CodeViewer from './CodeViewer';
+import CodeExamples from './CodeExamples';
 
 interface LibraryDetailsProps {
   libraryName: string;
@@ -14,9 +15,11 @@ const LibraryDetails: React.FC<LibraryDetailsProps> = ({
   onBack
 }) => {
   const [libraryInfo, setLibraryInfo] = useState<LibraryInfo | null>(null);
-  const [activeTab, setActiveTab] = useState<'classes' | 'functions' | 'constants'>('classes');
+  const [activeTab, setActiveTab] = useState<'classes' | 'functions' | 'constants' | 'examples'>('classes');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [codeExamples, setCodeExamples] = useState<CodeExample[]>([]);
+  const [loadingExamples, setLoadingExamples] = useState(false);
 
   useEffect(() => {
     const fetchLibraryInfo = async () => {
@@ -35,6 +38,26 @@ const LibraryDetails: React.FC<LibraryDetailsProps> = ({
 
     fetchLibraryInfo();
   }, [libraryName]);
+
+  useEffect(() => {
+    // Only fetch examples when the examples tab is selected
+    if (activeTab === 'examples' && codeExamples.length === 0) {
+      const fetchCodeExamples = async () => {
+        try {
+          setLoadingExamples(true);
+          const response = await getLibraryExamples(libraryName);
+          setCodeExamples(response.examples);
+        } catch (err) {
+          console.error('Error fetching code examples:', err);
+          // Don't set error state here to avoid disrupting the whole component
+        } finally {
+          setLoadingExamples(false);
+        }
+      };
+
+      fetchCodeExamples();
+    }
+  }, [activeTab, libraryName, codeExamples.length]);
 
   const handleViewCode = async (
     elementType: 'class' | 'function' | 'method',
@@ -96,7 +119,7 @@ const LibraryDetails: React.FC<LibraryDetailsProps> = ({
       </div>
 
       {/* Tabs */}
-      <div className="flex border-b">
+      <div className="flex border-b overflow-x-auto">
         <button
           className={`px-6 py-3 text-sm font-medium ${
             activeTab === 'classes'
@@ -127,89 +150,107 @@ const LibraryDetails: React.FC<LibraryDetailsProps> = ({
         >
           Constants ({libraryInfo.constants.length})
         </button>
+        <button
+          className={`px-6 py-3 text-sm font-medium ${
+            activeTab === 'examples'
+              ? 'text-blue-600 border-b-2 border-blue-600'
+              : 'text-gray-500 hover:text-gray-700'
+          }`}
+          onClick={() => setActiveTab('examples')}
+        >
+          Examples
+        </button>
       </div>
 
       {/* Tab Content */}
-      <div className="p-6 overflow-y-auto" style={{ maxHeight: '600px' }}>
-        {activeTab === 'classes' && (
-          <div className="space-y-4">
-            {libraryInfo.classes.map((classInfo) => (
-              <div key={classInfo.name} className="p-4 border rounded-lg">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-lg font-semibold text-gray-800">{classInfo.name}</h3>
-                  <button
-                    className="px-3 py-1 text-xs text-blue-600 bg-blue-100 rounded-full hover:bg-blue-200"
-                    onClick={() => handleViewCode('class', classInfo.name)}
-                  >
-                    View Code
-                  </button>
-                </div>
-                <p className="mt-2 text-sm text-gray-600">{classInfo.docstring}</p>
-                {classInfo.methods.length > 0 && (
-                  <div className="mt-3">
-                    <h4 className="text-sm font-medium text-gray-700">Methods:</h4>
-                    <ul className="mt-2 space-y-1">
-                      {classInfo.methods.map((method) => (
-                        <li key={method.name} className="flex items-center justify-between">
-                          <span className="text-sm text-gray-600">{method.name}()</span>
-                          <button
-                            className="px-2 py-0.5 text-xs text-blue-600 bg-blue-50 rounded hover:bg-blue-100"
-                            onClick={() => handleViewCode('method', method.name, classInfo.name)}
-                          >
-                            View
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
+      {activeTab !== 'examples' ? (
+        <div className="p-6 overflow-y-auto" style={{ maxHeight: '600px' }}>
+          {activeTab === 'classes' && (
+            <div className="space-y-4">
+              {libraryInfo.classes.map((classInfo) => (
+                <div key={classInfo.name} className="p-4 border rounded-lg">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-lg font-semibold text-gray-800">{classInfo.name}</h3>
+                    <button
+                      className="px-3 py-1 text-xs text-blue-600 bg-blue-100 rounded-full hover:bg-blue-200"
+                      onClick={() => handleViewCode('class', classInfo.name)}
+                    >
+                      View Code
+                    </button>
                   </div>
-                )}
-              </div>
-            ))}
-            {libraryInfo.classes.length === 0 && (
-              <p className="text-gray-500">No classes found in this library.</p>
-            )}
-          </div>
-        )}
-
-        {activeTab === 'functions' && (
-          <div className="space-y-4">
-            {libraryInfo.functions.map((functionInfo) => (
-              <div key={functionInfo.name} className="p-4 border rounded-lg">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-lg font-semibold text-gray-800">{functionInfo.name}()</h3>
-                  <button
-                    className="px-3 py-1 text-xs text-blue-600 bg-blue-100 rounded-full hover:bg-blue-200"
-                    onClick={() => handleViewCode('function', functionInfo.name)}
-                  >
-                    View Code
-                  </button>
+                  <p className="mt-2 text-sm text-gray-600">{classInfo.docstring}</p>
+                  {classInfo.methods.length > 0 && (
+                    <div className="mt-3">
+                      <h4 className="text-sm font-medium text-gray-700">Methods:</h4>
+                      <ul className="mt-2 space-y-1">
+                        {classInfo.methods.map((method) => (
+                          <li key={method.name} className="flex items-center justify-between">
+                            <span className="text-sm text-gray-600">{method.name}()</span>
+                            <button
+                              className="px-2 py-0.5 text-xs text-blue-600 bg-blue-50 rounded hover:bg-blue-100"
+                              onClick={() => handleViewCode('method', method.name, classInfo.name)}
+                            >
+                              View
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
                 </div>
-                <p className="mt-2 text-sm text-gray-600">{functionInfo.docstring}</p>
-              </div>
-            ))}
-            {libraryInfo.functions.length === 0 && (
-              <p className="text-gray-500">No functions found in this library.</p>
-            )}
-          </div>
-        )}
+              ))}
+              {libraryInfo.classes.length === 0 && (
+                <p className="text-gray-500">No classes found in this library.</p>
+              )}
+            </div>
+          )}
 
-        {activeTab === 'constants' && (
-          <div className="space-y-4">
-            {libraryInfo.constants.map((constantInfo) => (
-              <div key={constantInfo.name} className="p-4 border rounded-lg">
-                <h3 className="text-lg font-semibold text-gray-800">{constantInfo.name}</h3>
-                <div className="mt-1 text-xs text-gray-500">Type: {constantInfo.type}</div>
-                <pre className="p-2 mt-2 overflow-x-auto text-sm bg-gray-100 rounded">
-                  {constantInfo.value}
-                </pre>
-              </div>
-            ))}
-            {libraryInfo.constants.length === 0 && (
-              <p className="text-gray-500">No constants found in this library.</p>
-            )}
-          </div>
-        )}
-      </div>
+          {activeTab === 'functions' && (
+            <div className="space-y-4">
+              {libraryInfo.functions.map((functionInfo) => (
+                <div key={functionInfo.name} className="p-4 border rounded-lg">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-lg font-semibold text-gray-800">{functionInfo.name}()</h3>
+                    <button
+                      className="px-3 py-1 text-xs text-blue-600 bg-blue-100 rounded-full hover:bg-blue-200"
+                      onClick={() => handleViewCode('function', functionInfo.name)}
+                    >
+                      View Code
+                    </button>
+                  </div>
+                  <p className="mt-2 text-sm text-gray-600">{functionInfo.docstring}</p>
+                </div>
+              ))}
+              {libraryInfo.functions.length === 0 && (
+                <p className="text-gray-500">No functions found in this library.</p>
+              )}
+            </div>
+          )}
+
+          {activeTab === 'constants' && (
+            <div className="space-y-4">
+              {libraryInfo.constants.map((constantInfo) => (
+                <div key={constantInfo.name} className="p-4 border rounded-lg">
+                  <h3 className="text-lg font-semibold text-gray-800">{constantInfo.name}</h3>
+                  <div className="mt-1 text-xs text-gray-500">Type: {constantInfo.type}</div>
+                  <pre className="p-2 mt-2 overflow-x-auto text-sm bg-gray-100 rounded">
+                    {constantInfo.value}
+                  </pre>
+                </div>
+              ))}
+              {libraryInfo.constants.length === 0 && (
+                <p className="text-gray-500">No constants found in this library.</p>
+              )}
+            </div>
+          )}
+        </div>
+      ) : (
+        // Examples Tab Content
+        <CodeExamples 
+          examples={codeExamples}
+          isLoading={loadingExamples}
+        />
+      )}
     </div>
   );
 };

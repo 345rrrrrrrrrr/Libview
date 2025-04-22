@@ -7,6 +7,16 @@ import importlib.metadata
 import re
 import requests
 from concurrent.futures import ThreadPoolExecutor
+import json
+import os
+import time
+from pathlib import Path
+
+# Additional imports for code examples functionality
+import base64
+import html
+from urllib.parse import quote_plus
+import markdown
 
 api_bp = Blueprint('api', __name__)
 
@@ -14,6 +24,15 @@ api_bp = Blueprint('api', __name__)
 PYPI_SEARCH_URL = "https://pypi.org/pypi"
 PYPI_SEARCH_ENDPOINT = "https://pypi.org/search/"
 PYPI_PROJECT_URL = "https://pypi.org/pypi/{package_name}/json"
+
+# Code examples sources
+GITHUB_API_URL = "https://api.github.com/search/code"
+STACK_OVERFLOW_API_URL = "https://api.stackexchange.com/2.3/search"
+CODE_EXAMPLES_CACHE_DIR = Path(os.path.dirname(os.path.abspath(__file__))) / "code_examples_cache"
+
+# Create cache directory if it doesn't exist
+if not CODE_EXAMPLES_CACHE_DIR.exists():
+    CODE_EXAMPLES_CACHE_DIR.mkdir(parents=True)
 
 def format_docstring(docstring):
     """
@@ -616,3 +635,283 @@ def get_pypi_package_info(package_name):
             "status": "error",
             "message": f"Error accessing PyPI: {str(e)}"
         }), 500
+
+@api_bp.route('/library/<string:library_name>/examples', methods=['GET'])
+def get_library_examples(library_name):
+    """Get code examples for a Python library."""
+    try:
+        cache_file = CODE_EXAMPLES_CACHE_DIR / f"{library_name}_examples.json"
+        
+        # Check if we have cached examples
+        if cache_file.exists():
+            try:
+                with open(cache_file, 'r') as f:
+                    cached_data = json.load(f)
+                    # Use cached data if it's not too old (less than 1 week)
+                    if cached_data.get('timestamp', 0) > time.time() - (7 * 24 * 60 * 60):
+                        return jsonify(cached_data)
+            except Exception as e:
+                print(f"Error reading cache: {e}")
+        
+        # Extract any docstring examples from the library itself
+        docstring_examples = []
+        try:
+            # Try to import the module
+            try:
+                module = importlib.import_module(library_name.lower())
+            except ImportError:
+                module = importlib.import_module(library_name)
+            
+            # Look for code examples in module docstring
+            if module.__doc__:
+                code_blocks = extract_code_blocks(module.__doc__)
+                for i, code in enumerate(code_blocks):
+                    docstring_examples.append({
+                        "title": f"{library_name} Documentation Example {i+1}",
+                        "code": code,
+                        "language": "python",
+                        "source": "Library Documentation",
+                        "url": ""
+                    })
+            
+            # Look for examples in class and function docstrings
+            for name, obj in inspect.getmembers(module):
+                if name.startswith('_'):
+                    continue
+                    
+                if inspect.isclass(obj) or inspect.isfunction(obj):
+                    if obj.__doc__:
+                        code_blocks = extract_code_blocks(obj.__doc__)
+                        for i, code in enumerate(code_blocks):
+                            docstring_examples.append({
+                                "title": f"{name} Example {i+1}",
+                                "code": code,
+                                "language": "python",
+                                "source": f"{library_name}.{name} Documentation",
+                                "url": ""
+                            })
+        except Exception as e:
+            print(f"Error extracting docstring examples: {e}")
+        
+        # Get examples from GitHub
+        github_examples = []
+        try:
+            # Search for Python files that import and use the library
+            query = f"import {library_name} language:python"
+            headers = {}
+            
+            # Add GitHub token if available for higher rate limits
+            github_token = os.environ.get('GITHUB_TOKEN')
+            if github_token:
+                headers["Authorization"] = f"token {github_token}"
+                
+            params = {
+                "q": query,
+                "sort": "stars",
+                "per_page": 5
+            }
+            
+            response = requests.get(GITHUB_API_URL, params=params, headers=headers, timeout=10)
+            
+            if response.status_code == 200:
+                data = response.json()
+                for item in data.get('items', [])[:5]:  # Limit to 5 examples
+                    try:
+                        # Get the raw file content
+                        content_url = item.get('url')
+                        content_response = requests.get(content_url, headers=headers, timeout=5)
+                        
+                        if content_response.status_code == 200:
+                            file_data = content_response.json()
+                            content = file_data.get('content', '')
+                            if content:
+                                # Decode base64 content
+                                file_content = base64.b64decode(content).decode('utf-8')
+                                
+                                # Extract the most relevant part (find sections using the library)
+                                relevant_code = extract_relevant_code(file_content, library_name)
+                                
+                                if relevant_code:
+                                    repo_name = item.get('repository', {}).get('full_name', 'Unknown Repo')
+                                    file_path = item.get('path', 'Unknown File')
+                                    
+                                    github_examples.append({
+                                        "title": f"{repo_name} - {file_path}",
+                                        "code": relevant_code,
+                                        "language": "python",
+                                        "source": "GitHub",
+                                        "url": item.get('html_url', '')
+                                    })
+                    except Exception as e:
+                        print(f"Error fetching GitHub file: {e}")
+        except Exception as e:
+            print(f"Error fetching GitHub examples: {e}")
+        
+        # Get examples from Stack Overflow
+        stackoverflow_examples = []
+        try:
+            # Search for Stack Overflow questions with accepted answers
+            params = {
+                "site": "stackoverflow",
+                "tagged": library_name,
+                "sort": "votes",
+                "order": "desc",
+                "filter": "withbody",  # Include the body with the answers
+                "pagesize": 5
+            }
+            
+            response = requests.get(f"{STACK_OVERFLOW_API_URL}/advanced", params=params, timeout=10)
+            
+            if response.status_code == 200:
+                data = response.json()
+                for item in data.get('items', [])[:5]:
+                    try:
+                        title = item.get('title', '')
+                        body = item.get('body', '')
+                        
+                        # Extract code blocks using regex
+                        code_blocks = re.findall(r'<code>(.*?)</code>', body, re.DOTALL)
+                        
+                        for i, code in enumerate(code_blocks):
+                            # Skip very short code snippets
+                            if len(code) < 20:
+                                continue
+                                
+                            # Unescape HTML entities
+                            code = html.unescape(code)
+                            
+                            stackoverflow_examples.append({
+                                "title": title,
+                                "code": code,
+                                "language": "python",
+                                "source": "Stack Overflow",
+                                "url": item.get('link', '')
+                            })
+                    except Exception as e:
+                        print(f"Error processing Stack Overflow example: {e}")
+        except Exception as e:
+            print(f"Error fetching Stack Overflow examples: {e}")
+        
+        # Combine all examples
+        all_examples = docstring_examples + github_examples + stackoverflow_examples
+        
+        # Ensure we have at least some examples even if API calls fail
+        if not all_examples:
+            all_examples = [{
+                "title": "Basic Example",
+                "code": f"import {library_name}\n\n# Basic usage example\n# For more examples, visit the library documentation",
+                "language": "python",
+                "source": "Generated",
+                "url": ""
+            }]
+        
+        # Save to cache
+        result = {
+            "status": "success",
+            "library_name": library_name,
+            "examples": all_examples,
+            "timestamp": int(time.time())
+        }
+        
+        try:
+            with open(cache_file, 'w') as f:
+                json.dump(result, f)
+        except Exception as e:
+            print(f"Error saving cache: {e}")
+        
+        return jsonify(result)
+        
+    except Exception as e:
+        return jsonify({
+            "status": "error",
+            "message": f"Error getting examples: {str(e)}"
+        }), 500
+
+def extract_code_blocks(docstring):
+    """Extract Python code blocks from docstrings."""
+    if not docstring:
+        return []
+    
+    # First, try to find explicit code blocks marked by indentation and >>> prompt
+    examples = []
+    
+    # Look for reStructuredText code blocks
+    blocks = re.findall(r'```python\s+(.*?)\s+```', docstring, re.DOTALL)
+    examples.extend(blocks)
+    
+    # Look for code blocks with >>> prompts
+    prompt_blocks = re.findall(r'>>> (.*?)(?=>>>|\Z)', docstring, re.DOTALL)
+    for block in prompt_blocks:
+        # Clean up the prompts
+        lines = block.splitlines()
+        code_lines = []
+        for line in lines:
+            if line.strip().startswith('>>>'):
+                code_lines.append(line.strip()[4:])
+            elif line.strip().startswith('...'):
+                code_lines.append(line.strip()[4:])
+            else:
+                # Skip output lines
+                continue
+        if code_lines:
+            examples.append('\n'.join(code_lines))
+    
+    # Look for indented code blocks
+    indented_blocks = re.findall(r'(?:^|\n)( {4,}[^\n]+(?:\n {4,}[^\n]+)*)', docstring)
+    for block in indented_blocks:
+        # Remove common indentation
+        lines = block.splitlines()
+        if lines:
+            common_indent = min(len(line) - len(line.lstrip()) for line in lines if line.strip())
+            code = '\n'.join(line[common_indent:] for line in lines)
+            # Only add if it looks like Python code
+            if re.search(r'\bdef\b|\bclass\b|\bif\b|\bfor\b|\bimport\b|\bwith\b', code):
+                examples.append(code)
+    
+    return examples
+
+def extract_relevant_code(file_content, library_name):
+    """Extract the most relevant code snippets from a file that uses the given library."""
+    # Split the file into lines
+    lines = file_content.splitlines()
+    
+    # Find import statements for the library
+    import_patterns = [
+        f"import {library_name}",
+        f"from {library_name} import"
+    ]
+    
+    import_lines = []
+    for i, line in enumerate(lines):
+        if any(pattern in line for pattern in import_patterns):
+            import_lines.append(i)
+    
+    if not import_lines:
+        # If no direct imports found, look for any usage of the library name
+        for i, line in enumerate(lines):
+            if f"{library_name}." in line:
+                # Found possible usage
+                import_lines.append(i)
+    
+    if not import_lines:
+        # No imports found
+        return None
+    
+    # Extract meaningful snippets around imports or usage
+    relevant_snippets = []
+    
+    for import_line in import_lines:
+        # Look for a function or class that uses the library
+        start_line = max(0, import_line - 5)
+        end_line = min(len(lines), import_line + 30)
+        
+        # Capture a reasonable chunk of code
+        snippet = '\n'.join(lines[start_line:end_line])
+        relevant_snippets.append(snippet)
+    
+    # Combine snippets, but limit total length
+    combined = '\n\n'.join(relevant_snippets)
+    if len(combined) > 2000:
+        combined = combined[:2000] + "\n# ... (truncated) ..."
+    
+    return combined
